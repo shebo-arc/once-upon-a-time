@@ -1,5 +1,4 @@
 import streamlit as st
-#from transformers import pipeline
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -121,74 +120,6 @@ class SimpleTokenizer:
     def vocab_size(self):
         return len(self.word_to_idx)
 
-# Dataset
-class StoryDataset(Dataset):
-    def __init__(self, stories, tokenizer, seq_length=64):
-        self.tokenizer = tokenizer
-        self.seq_length = seq_length
-        self.tokenized_stories = []
-        for story in stories:
-            tokens = tokenizer.encode(story, add_special_tokens=True)
-            self.tokenized_stories.append(tokens)
-
-    def __len__(self):
-        return len(self.tokenized_stories)
-
-    def __getitem__(self, idx):
-        tokens = self.tokenized_stories[idx]
-        if len(tokens) <= self.seq_length + 1:
-            tokens = tokens + [0] * (self.seq_length + 1 - len(tokens))
-        else:
-            start = random.randint(0, len(tokens) - self.seq_length - 1)
-            tokens = tokens[start:start + self.seq_length + 1]
-        src = torch.tensor(tokens[:-1])
-        tgt = torch.tensor(tokens[1:])
-        return src, tgt
-
-# Training function
-def train_model(model, train_loader, val_loader, optimizer, scheduler, device, epochs=10):
-    model.train()
-    best_val_loss = float('inf')
-    for epoch in range(epochs):
-        model.train()
-        epoch_loss = 0
-        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} [Train]")
-        for src, tgt in progress_bar:
-            src, tgt = src.to(device), tgt.to(device)
-            optimizer.zero_grad()
-            output = model(src, tgt)
-            output_flat = output.view(-1, model.vocab_size)
-            target_flat = tgt.contiguous().view(-1)
-            loss = F.cross_entropy(output_flat, target_flat, ignore_index=0)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
-            epoch_loss += loss.item()
-            progress_bar.set_postfix({"loss": loss.item()})
-        avg_train_loss = epoch_loss / len(train_loader)
-        print(f"Epoch {epoch+1}/{epochs}, Training loss: {avg_train_loss:.4f}")
-
-        model.eval()
-        val_loss = 0
-        progress_bar = tqdm(val_loader, desc=f"Epoch {epoch+1}/{epochs} [Val]")
-        with torch.no_grad():
-            for src, tgt in progress_bar:
-                src, tgt = src.to(device), tgt.to(device)
-                output = model(src, tgt)
-                output_flat = output.view(-1, model.vocab_size)
-                target_flat = tgt.contiguous().view(-1)
-                loss = F.cross_entropy(output_flat, target_flat, ignore_index=0)
-                val_loss += loss.item()
-                progress_bar.set_postfix({"loss": loss.item()})
-        avg_val_loss = val_loss / len(val_loader)
-        print(f"Epoch {epoch+1}/{epochs}, Validation loss: {avg_val_loss:.4f}")
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), "best_model.pt")
-            print(f"Saved new best model with validation loss: {best_val_loss:.4f}")
-    return model
-
 # Text generation
 def generate_story(model, tokenizer, prompt, max_length=100, temperature=1.0, device="cuda"):
     model.eval()
@@ -208,9 +139,6 @@ def generate_story(model, tokenizer, prompt, max_length=100, temperature=1.0, de
         if next_token_id == tokenizer.word_to_idx[tokenizer.eos_token]:
             break
     return tokenizer.decode(output_ids)
-
-
-
 
 # Cache the model to avoid reloading on every rerun
 @st.cache_resource
@@ -249,7 +177,7 @@ st.title("AI Story Generator")
 st.markdown("Enter a prompt and customize your story!")
 
 # User inputs
-prompt = st.text_area("Story Prompt", "Once upon a time, in a magical forest...", height=100)
+prompt = st.text_area("Story Prompt", "Once upon a time", height=100)
 #genre = st.selectbox("Genre", ["Fantasy", "Sci-Fi", "Mystery", "Adventure", "Horror"])
 max_length = st.slider("Story Length (words)", min_value=50, max_value=500, value=200)
 
@@ -281,6 +209,5 @@ if st.button("Generate Story"):
 # Optional: Add a clear button to reset inputs
 if st.button("Clear"):
     st.session_state.prompt = ""
-    st.session_state.genre = "Fantasy"
     st.session_state.max_length = max_length
     #st.experimental_rerun()
